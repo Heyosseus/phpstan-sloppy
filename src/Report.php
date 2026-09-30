@@ -12,11 +12,16 @@ namespace Heyosseus\PhpstanSloppy;
  */
 final readonly class Report
 {
+    /**
+     * @param  list<string>  $tips  Shown under the message, in order.
+     * @param  array<string, mixed>  $metadata  What a custom error formatter can read: the finding's rule, severity, confidence and so on.
+     */
     public function __construct(
         public string $identifier,
         public string $message,
         public ?string $file = null,
         public ?int $line = null,
-        public ?string $tip = null,
+        public array $tips = [],
+        public array $metadata = [],
     ) {}
 }

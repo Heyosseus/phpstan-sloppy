@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Heyosseus\PhpstanSloppy\Tests;
 
+use Heyosseus\PhpstanSloppy\Options;
+use Heyosseus\PhpstanSloppy\SloppyDiagnoseExtension;
 use Heyosseus\PhpstanSloppy\SloppyFileCollector;
 use Heyosseus\PhpstanSloppy\SloppyRule;
 use PHPStan\Analyser\Error;
@@ -43,6 +45,11 @@ final class ExtensionTest extends RuleTestCase
                 projectRoot: '{$root}'
                 failOn: medium
                 useBaseline: false
+                minConfidence: 50
+                excludeRules: [sloppy.SL111]
+                explain: true
+                minScore: 0
+                cache: false
 
             NEON);
 
@@ -62,7 +69,7 @@ final class ExtensionTest extends RuleTestCase
     public function test_the_parameters_reach_the_rule(): void
     {
         // The parameters point at the fixture project, lower the threshold to
-        // medium and turn the baseline off.
+        // medium, turn the baseline off and ask for explanations.
         $errors = $this->gatherAnalyserErrors([
             (string) realpath(__DIR__.'/Fixtures/project/src/Billing/InvoiceTotals.php'),
             (string) realpath(__DIR__.'/Fixtures/project/src/Importer.php'),
@@ -72,5 +79,19 @@ final class ExtensionTest extends RuleTestCase
         sort($identifiers);
 
         self::assertSame(['sloppy.SL104', 'sloppy.SL107'], $identifiers);
+        self::assertStringContainsString('Why it matters: ', (string) $errors[0]->getTip());
+    }
+
+    public function test_the_diagnose_extension_is_registered(): void
+    {
+        self::assertCount(1, array_filter(
+            self::getContainer()->getServicesByTag('phpstan.diagnoseExtension'),
+            static fn (mixed $extension): bool => $extension instanceof SloppyDiagnoseExtension,
+        ));
+    }
+
+    public function test_the_cache_follows_the_parameter(): void
+    {
+        self::assertNull(self::getContainer()->getByType(Options::class)->cacheDirectory);
     }
 }

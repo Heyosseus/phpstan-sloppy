@@ -8,5 +8,6 @@
 phpstan.neon.dist   export-ignore
 phpunit.xml.dist    export-ignore
 pint.json           export-ignore
+sloppy.php          export-ignore
 
 *.php               diff=php

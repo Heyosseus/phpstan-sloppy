@@ -11,6 +11,24 @@ parameters:
     failOn: null
     # Leave out what .sloppy-baseline.json already accepts.
     useBaseline: true
+    # The lowest confidence reported, 0 to 100. Null keeps the project's own
+    # min_confidence.
+    minConfidence: null
+    # Report only these rules, by ID (SL107 or sloppy.SL107). Empty is all.
+    onlyRules: []
+    # Never report these rules.
+    excludeRules: []
+    # Report only what changed since this git revision, like sloppy diff: a
+    # branch, tag or commit, or auto for the pull request's base branch in CI.
+    # Null reports everything.
+    diffBase: null
+    # Add each rule's explanation of why the pattern costs you to the tips.
+    explain: false
+    # Fail when Sloppy's score for the analysed code is below this, 0 to 100.
+    minScore: null
+    # Keep results in PHPStan's tmpDir, and skip the Sloppy run when nothing
+    # it reads has changed since the last one.
+    cache: true
 
 parametersSchema:
   sloppy: structure([
@@ -18,9 +36,34 @@ parametersSchema:
     config: schema(string(), nullable())
     failOn: schema(anyOf('critical', 'high', 'medium', 'low', 'info', 'never'), nullable())
     useBaseline: bool()
+    minConfidence: schema(int(), min(0), max(100), nullable())
+    onlyRules: listOf(string())
+    excludeRules: listOf(string())
+    diffBase: schema(string(), nullable())
+    explain: bool()
+    minScore: schema(int(), min(0), max(100), nullable())
+    cache: bool()
   ])
 
 services:
+  -
+    class: Heyosseus\PhpstanSloppy\Options
+    factory: Heyosseus\PhpstanSloppy\Options::fromParameters
+    arguments:
+      projectRoot: %sloppy.projectRoot%
+      workingDirectory: %currentWorkingDirectory%
+      configPath: %sloppy.config%
+      failOn: %sloppy.failOn%
+      useBaseline: %sloppy.useBaseline%
+      minConfidence: %sloppy.minConfidence%
+      onlyRules: %sloppy.onlyRules%
+      excludeRules: %sloppy.excludeRules%
+      diffBase: %sloppy.diffBase%
+      explain: %sloppy.explain%
+      minScore: %sloppy.minScore%
+      cache: %sloppy.cache%
+      tmpDir: %tmpDir%
+
   -
     class: Heyosseus\PhpstanSloppy\SloppyFileCollector
     tags:
@@ -28,12 +71,11 @@ services:
 
   -
     class: Heyosseus\PhpstanSloppy\SloppyRunner
-    arguments:
-      projectRoot: %sloppy.projectRoot%
-      workingDirectory: %currentWorkingDirectory%
-      configPath: %sloppy.config%
-      failOn: %sloppy.failOn%
-      useBaseline: %sloppy.useBaseline%
+
+  -
+    class: Heyosseus\PhpstanSloppy\SloppyDiagnoseExtension
+    tags:
+      - phpstan.diagnoseExtension
 
 rules:
   - Heyosseus\PhpstanSloppy\SloppyRule

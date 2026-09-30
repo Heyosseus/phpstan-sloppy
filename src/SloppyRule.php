@@ -50,8 +50,12 @@ final readonly class SloppyRule implements Rule
                 $error->line($report->line);
             }
 
-            if ($report->tip !== null) {
-                $error->tip($report->tip);
+            foreach ($report->tips as $tip) {
+                $error->addTip($tip);
+            }
+
+            if ($report->metadata !== []) {
+                $error->metadata($report->metadata);
             }
 
             $errors[] = $error->build();

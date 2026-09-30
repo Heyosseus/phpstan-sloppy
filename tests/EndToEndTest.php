@@ -59,19 +59,57 @@ final class EndToEndTest extends TestCase
         self::assertStringContainsString('failOn', $output);
     }
 
+    public function test_an_editor_analysing_an_unsaved_buffer_gets_findings_for_the_buffer(): void
+    {
+        // The buffer rethrows what the file on disk swallows.
+        mkdir($this->tmp, 0777, true);
+        $buffer = $this->tmp.'/buffer.php';
+        file_put_contents($buffer, str_replace(
+            "} catch (\\Throwable \$exception) {\n        }",
+            "} catch (\\Throwable \$exception) {\n            throw new \\LogicException('Import failed.', 0, \$exception);\n        }",
+            (string) file_get_contents(__DIR__.'/Fixtures/project/src/Importer.php'),
+        ));
+
+        [$exit, $output, $errors] = $this->phpstan('phpstan.neon', [
+            '--tmp-file='.$buffer,
+            '--instead-of=tests/Fixtures/project/src/Importer.php',
+            'tests/Fixtures/project/src/Importer.php',
+        ]);
+
+        if (str_contains($errors, '"--tmp-file" option does not exist')) {
+            self::markTestSkipped('This PHPStan predates editor mode.');
+        }
+
+        self::assertSame(0, $exit, $output.$errors);
+        self::assertSame([], self::errors($output));
+    }
+
+    public function test_diagnose_says_what_the_extension_read(): void
+    {
+        [$exit, $output, $errors] = $this->phpstan('phpstan.neon', [], 'diagnose');
+        $output = (string) preg_replace('/\e\[[0-9;]*m/', '', $output.$errors);
+
+        self::assertSame(0, $exit, $output);
+        self::assertMatchesRegularExpression('/Sloppy: v?\d+\.\d+\.\d+, through heyosseus\/phpstan-sloppy/', $output);
+        self::assertStringContainsString('Sloppy configuration: sloppy.php', $output);
+        self::assertStringContainsString('Sloppy reports: medium and above (the failOn parameter)', $output);
+        self::assertMatchesRegularExpression('/Sloppy rules: \d+ active: SL101 /', $output);
+    }
+
     /**
+     * @param  list<string>  $arguments
      * @return array{int, string, string} The exit code, standard output and standard error.
      */
-    private function phpstan(string $config): array
+    private function phpstan(string $config, array $arguments = [], string $subcommand = 'analyse'): array
     {
         $command = [
             PHP_BINARY,
             'vendor/phpstan/phpstan/phpstan',
-            'analyse',
+            $subcommand,
             '--configuration=tests/e2e/'.$config,
-            '--error-format=json',
-            '--no-progress',
+            ...($subcommand === 'analyse' ? ['--error-format=json', '--no-progress'] : []),
             '--memory-limit=512M',
+            ...$arguments,
         ];
 
         // Standard error goes to a file, so a child that writes a lot of it
