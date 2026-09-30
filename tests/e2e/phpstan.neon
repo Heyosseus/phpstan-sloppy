@@ -1,0 +1,14 @@
+includes:
+  - ../../extension.neon
+
+parameters:
+  level: 0
+  tmpDir: %env.PHPSTAN_SLOPPY_TMP%
+  paths:
+    - ../Fixtures/project/src
+    - ../Fixtures/project/tests
+  sloppy:
+    # Relative to the directory PHPStan runs in, which the test sets to the
+    # package root.
+    projectRoot: tests/Fixtures/project
+    failOn: medium
