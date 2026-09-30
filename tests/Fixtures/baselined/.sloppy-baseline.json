@@ -1,0 +1,33 @@
+{
+    "schema": 1,
+    "tool": "sloppy",
+    "generated_at": "2026-09-30T14:32:53+00:00",
+    "score": 79,
+    "total": 3,
+    "entries": [
+        {
+            "id": "b601d87bf7916cd0",
+            "rule": "SL104",
+            "file": "src/Billing/InvoiceTotals.php",
+            "fingerprint": "InvoiceTotals::total",
+            "count": 1,
+            "message": "InvoiceTotals::total() is structurally identical to QuoteTotals::total() at src/Billing/QuoteTotals.php:12."
+        },
+        {
+            "id": "328d726f2f3c0541",
+            "rule": "SL104",
+            "file": "src/Billing/QuoteTotals.php",
+            "fingerprint": "QuoteTotals::total",
+            "count": 1,
+            "message": "QuoteTotals::total() is structurally identical to InvoiceTotals::total() at src/Billing/InvoiceTotals.php:12."
+        },
+        {
+            "id": "bd131508a171f700",
+            "rule": "SL107",
+            "file": "src/Importer.php",
+            "fingerprint": "Importer::run:Throwable",
+            "count": 1,
+            "message": "Importer::run() catches Throwable and does nothing at all."
+        }
+    ]
+}
