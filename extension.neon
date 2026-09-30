@@ -1,0 +1,39 @@
+parameters:
+  sloppy:
+    # The project Sloppy reads its configuration and composer.json from. Null
+    # is the directory PHPStan was started in.
+    projectRoot: null
+    # An explicit Sloppy configuration file. Null finds config/sloppy.php,
+    # sloppy.php or .sloppy.php in the project root, as bin/sloppy does.
+    config: null
+    # The lowest severity reported: critical, high, medium, low, info, or never.
+    # Null keeps the project's own fail_on, so PHPStan fails when sloppy ci would.
+    failOn: null
+    # Leave out what .sloppy-baseline.json already accepts.
+    useBaseline: true
+
+parametersSchema:
+  sloppy: structure([
+    projectRoot: schema(string(), nullable())
+    config: schema(string(), nullable())
+    failOn: schema(anyOf('critical', 'high', 'medium', 'low', 'info', 'never'), nullable())
+    useBaseline: bool()
+  ])
+
+services:
+  -
+    class: Heyosseus\PhpstanSloppy\SloppyFileCollector
+    tags:
+      - phpstan.collector
+
+  -
+    class: Heyosseus\PhpstanSloppy\SloppyRunner
+    arguments:
+      projectRoot: %sloppy.projectRoot%
+      workingDirectory: %currentWorkingDirectory%
+      configPath: %sloppy.config%
+      failOn: %sloppy.failOn%
+      useBaseline: %sloppy.useBaseline%
+
+rules:
+  - Heyosseus\PhpstanSloppy\SloppyRule
