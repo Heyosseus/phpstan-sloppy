@@ -1,7 +1,7 @@
 {
     "name": "heyosseus/phpstan-sloppy",
     "type": "phpstan-extension",
-    "description": "Sloppy's rules inside your PHPStan run: swallowed exceptions, god methods, N+1 queries, placeholder bodies and the rest of the debt AI coding agents leave in PHP, reported as PHPStan errors.",
+    "description": "Sloppy's rules inside your PHPStan run: swallowed exceptions, god methods, N+1 queries, placeholder bodies, weakened tests and the rest of the debt AI coding agents leave in PHP, reported as PHPStan errors. Diff mode, editor mode, a quality gate and a result cache included.",
     "keywords": [
         "phpstan",
         "phpstan-extension",
@@ -11,7 +11,15 @@
         "technical-debt",
         "ai",
         "ai-agents",
+        "ai-code-review",
+        "claude-code",
+        "code-review",
+        "quality-gate",
+        "pull-request",
+        "n-plus-one",
+        "eloquent",
         "laravel",
+        "larastan",
         "sloppy"
     ],
     "license": "MIT",

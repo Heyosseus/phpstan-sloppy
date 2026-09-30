@@ -6,6 +6,38 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-09-30
+
+### Added
+
+- `diffBase` reports only what a branch introduced since a revision, as
+  `sloppy diff` does, and `auto` finds the pull request's base branch in CI.
+  Diff mode brings `SL502` (baseline growth) and `SL503` (weakened test) into
+  PHPStan, reported on the baseline or test they are about.
+- A result cache in PHPStan's `tmpDir`: a run in which nothing Sloppy reads
+  has changed reuses the last answer instead of running Sloppy. On for
+  everyone; `cache: false` turns it off.
+- PHPStan's editor mode: with `--tmp-file` and `--instead-of`, Sloppy reads
+  the unsaved buffer and reports on the file the editor has open.
+- `onlyRules` and `excludeRules`, by `SL107` or `sloppy.SL107`. A rule ID that
+  does not exist is an error that suggests the closest one.
+- `minConfidence`, overriding the project's `min_confidence`.
+- `minScore`, a quality gate reported as `sloppy.score` when the analysed code
+  scores below it.
+- `explain` adds each rule's reasoning to its tips.
+- Each finding's tips now include its severity, its confidence and a link to
+  the rule's documentation, and each finding carries its rule, severity,
+  confidence and category as error metadata for custom error formatters.
+- `vendor/bin/phpstan diagnose` prints what the extension read: versions,
+  project root, configuration file, threshold, active rules, baseline, diff
+  base and cache.
+
+### Changed
+
+- The extension's own classes were reorganised around an `Options` service.
+  None of them is meant for use outside the extension, and `extension.neon`'s
+  parameters are unchanged apart from the additions above.
+
 ## [1.0.0]
 
 The first release: [Sloppy](https://github.com/heyosseus/sloppy)'s findings as
@@ -27,5 +59,6 @@ PHPStan errors.
 - Registered through `extra.phpstan`, so `phpstan/extension-installer`
   enables it on install.
 
-[Unreleased]: https://github.com/heyosseus/phpstan-sloppy/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/heyosseus/phpstan-sloppy/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/heyosseus/phpstan-sloppy/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/heyosseus/phpstan-sloppy/releases/tag/v1.0.0

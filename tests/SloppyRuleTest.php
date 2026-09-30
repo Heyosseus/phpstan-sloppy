@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Heyosseus\PhpstanSloppy\Tests;
 
+use Heyosseus\PhpstanSloppy\Options;
 use Heyosseus\PhpstanSloppy\SloppyFileCollector;
 use Heyosseus\PhpstanSloppy\SloppyRule;
 use Heyosseus\PhpstanSloppy\SloppyRunner;
@@ -28,12 +29,12 @@ final class SloppyRuleTest extends RuleTestCase
 
     protected function getRule(): Rule
     {
-        return new SloppyRule(new SloppyRunner(
+        return new SloppyRule(new SloppyRunner(new Options(
             projectRoot: self::fixture($this->project),
             workingDirectory: __DIR__,
             failOn: $this->failOn,
             useBaseline: $this->useBaseline,
-        ));
+        )));
     }
 
     /**
@@ -53,7 +54,12 @@ final class SloppyRuleTest extends RuleTestCase
         self::assertSame('sloppy.SL107', $errors[0]->getIdentifier());
         self::assertSame(13, $errors[0]->getLine());
         self::assertSame(self::path('project', 'src/Importer.php'), $errors[0]->getFilePath());
-        self::assertStringStartsWith('Do at least one of: log or report the exception', (string) $errors[0]->getTip());
+        self::assertStringContainsString('Do at least one of: log or report the exception', (string) $errors[0]->getTip());
+        self::assertStringContainsString('High severity, 96% confidence. Rule SL107: https://github.com/heyosseus/sloppy/blob/main/docs/rules.md#php-and-general', (string) $errors[0]->getTip());
+        self::assertSame(
+            ['rule' => 'SL107', 'name' => 'Swallowed Exception', 'category' => 'error-handling', 'severity' => 'high', 'confidence' => 96],
+            array_slice((array) ($errors[0]->getMetadata()['sloppy'] ?? []), 0, 5),
+        );
     }
 
     public function test_it_follows_the_projects_fail_on_so_medium_findings_stay_out(): void

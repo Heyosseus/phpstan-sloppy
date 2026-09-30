@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace Heyosseus\PhpstanSloppy;
 
-use Heyosseus\Sloppy\Analysis\AnalysisResult;
 use Heyosseus\Sloppy\Analysis\Finding;
 use Heyosseus\Sloppy\Analysis\Severity;
+use Heyosseus\Sloppy\Evidence\EvidenceCollector;
+use Heyosseus\Sloppy\Git\ChangedFile;
 use Heyosseus\Sloppy\Sloppy;
-use RuntimeException;
+use InvalidArgumentException;
 use Throwable;
 
 /**
@@ -21,22 +22,11 @@ use Throwable;
  */
 final readonly class SloppyRunner
 {
-    public const string INTERNAL_ERROR = 'sloppy.internalError';
+    public const string INTERNAL_ERROR = RunReport::INTERNAL_ERROR;
 
-    private const string NEVER = 'never';
+    public const string SCORE = RunReport::SCORE;
 
-    /**
-     * @param  string|null  $projectRoot  Where the project's composer.json and Sloppy configuration are; null for the working directory.
-     * @param  string|null  $configPath  An explicit configuration file, relative to the project root or absolute.
-     * @param  string|null  $failOn  The lowest severity reported, or `never`; null for the project's own `fail_on`.
-     */
-    public function __construct(
-        private ?string $projectRoot,
-        private string $workingDirectory,
-        private ?string $configPath = null,
-        private ?string $failOn = null,
-        private bool $useBaseline = true,
-    ) {}
+    public function __construct(private Options $options) {}
 
     /**
      * @param  list<string>  $files  Absolute paths, as PHPStan spells them.
@@ -49,153 +39,181 @@ final readonly class SloppyRunner
         }
 
         try {
-            return $this->reports($files);
+            return $this->reports(new AnalysedPaths($files));
         } catch (Throwable $exception) {
             // A broken configuration must fail the run it was meant to gate,
             // visibly and without taking PHPStan's own errors down with it.
-            return [new Report(
-                identifier: self::INTERNAL_ERROR,
-                message: 'Sloppy could not run: '.$exception->getMessage(),
-                tip: 'Check the Sloppy configuration, or the sloppy parameters in your PHPStan configuration.',
-            )];
+            return [RunReport::couldNotRun($exception)];
         }
     }
 
     /**
-     * @param  list<string>  $files
      * @return list<Report>
      */
-    private function reports(array $files): array
+    private function reports(AnalysedPaths $paths): array
     {
-        $root = self::resolve($this->projectRoot ?? $this->workingDirectory, $this->workingDirectory);
+        $project = Project::load($this->options);
+        $configuration = $project->sloppy->configuration;
 
-        if (! is_dir($root)) {
-            throw new RuntimeException(sprintf('Project root [%s] does not exist.', $root));
-        }
-
-        $sloppy = Sloppy::forProject($root, $this->configPath === null ? null : self::resolve($this->configPath, $root));
-        $configuration = $sloppy->configuration;
-        $threshold = $this->threshold($configuration->failOn());
-
-        if (! $configuration->enabled() || ! $threshold instanceof Severity) {
+        if (! $configuration->enabled()) {
             return [];
         }
 
-        $result = $sloppy->analyzePaths($files, $this->useBaseline);
-        $paths = [];
+        if ($this->options->minConfidence !== null) {
+            $configuration = $configuration->withMinConfidence(self::percentage('minConfidence', $this->options->minConfidence));
+        }
 
-        foreach ($files as $file) {
-            $paths[self::comparable($file)] = $file;
+        if ($this->options->minScore !== null) {
+            self::percentage('minScore', $this->options->minScore);
+        }
+
+        $filter = RuleFilter::for($this->options, $configuration);
+        $sloppy = $filter->narrow($project->sloppy->withConfiguration($configuration));
+        $threshold = $this->threshold($configuration->failOn());
+
+        if (! $threshold instanceof Severity && $this->options->minScore === null) {
+            return [];
+        }
+
+        $base = DiffBase::resolve($this->options->diffBase, $sloppy->git(), $configuration->basePath);
+
+        return $base === null
+            ? $this->scan($sloppy, $filter, $threshold, $paths)
+            : $this->diff($sloppy, $filter, $threshold, $base, $paths);
+    }
+
+    /**
+     * Everything Sloppy finds in the files PHPStan analysed.
+     *
+     * @return list<Report>
+     */
+    private function scan(Sloppy $sloppy, RuleFilter $filter, ?Severity $threshold, AnalysedPaths $paths): array
+    {
+        $configuration = $sloppy->configuration;
+        $map = $sloppy->fileMap();
+        $only = $sloppy->files()->named($map, $paths->files);
+
+        // Nothing to report on is no reason to parse the whole project.
+        if ($only === []) {
+            return [];
+        }
+
+        $map = $this->withEditorBuffer($map);
+        $cache = $this->options->cacheDirectory === null ? null : new ResultCache($this->options->cacheDirectory);
+        $slot = $configuration->basePath.'|'.$this->options->configPath().'|'.($this->options->editorFile === null ? 'files' : 'editor');
+        $key = $cache instanceof ResultCache ? CacheKey::for($sloppy, $this->options, $map, $only, $paths->files) : '';
+        $cached = $cache?->get($slot, $key);
+
+        if ($cached !== null) {
+            return $cached;
+        }
+
+        $result = $sloppy->analyzer()->analyze($map, $only);
+
+        if ($this->options->useBaseline) {
+            $result = $sloppy->baselines()->apply($result, $configuration->baselinePath(), $sloppy->scores());
         }
 
         $reports = [];
 
         foreach ($result->findings as $finding) {
-            if ($finding->severity->isAtLeast($threshold)) {
-                $reports[] = $this->finding($finding, $configuration->basePath, $paths);
+            if ($this->reportable($finding, $filter, $threshold)) {
+                $reports[] = FindingReport::from($finding, $paths->spell($configuration->basePath, $finding->location->relativePath), $this->options->explain);
             }
         }
 
-        return [...$reports, ...$this->ruleFailures($result, $configuration->basePath, $paths)];
-    }
+        $reports = [
+            ...$reports,
+            ...RunReport::ruleFailures($result->errors, $result->analyzedFiles, $configuration->basePath, $paths),
+            ...RunReport::scoreBelow($this->options->minScore, $result->score),
+        ];
 
-    /**
-     * @param  array<string, string>  $paths  PHPStan's paths, keyed by their comparable spelling.
-     */
-    private function finding(Finding $finding, string $basePath, array $paths): Report
-    {
-        return new Report(
-            identifier: self::identifier($finding->ruleId),
-            message: sprintf('%s: %s', $finding->ruleName, $finding->message),
-            file: self::pathFor($basePath, $finding->location->relativePath, $paths),
-            line: $finding->location->line,
-            tip: $finding->suggestion,
-        );
-    }
-
-    /**
-     * A rule that threw on a file.
-     *
-     * Sloppy keeps going when one rule fails on one file, and records the
-     * failure as `<rule> in <path>`. Parse failures are recorded too, under
-     * the bare path, and are left out: PHPStan reports those itself.
-     *
-     * @param  array<string, string>  $paths
-     * @return list<Report>
-     */
-    private function ruleFailures(AnalysisResult $result, string $basePath, array $paths): array
-    {
-        $reports = [];
-
-        foreach ($result->errors as $where => $message) {
-            foreach ($result->analyzedFiles as $relative) {
-                $suffix = ' in '.$relative;
-
-                if (! str_ends_with($where, $suffix)) {
-                    continue;
-                }
-
-                $reports[] = new Report(
-                    identifier: self::INTERNAL_ERROR,
-                    message: sprintf('Sloppy rule %s failed on this file: %s', substr($where, 0, -strlen($suffix)), $message),
-                    file: self::pathFor($basePath, $relative, $paths),
-                    tip: 'This is a bug in Sloppy; please report it at https://github.com/heyosseus/sloppy/issues.',
-                );
-
-                break;
-            }
-        }
+        $cache?->put($slot, $key, $reports);
 
         return $reports;
     }
 
+    /**
+     * Only what the branch introduced since `$base`.
+     *
+     * The comparisons that need two revisions -- `SL502` baseline growth and
+     * `SL503` weakened tests -- come with it. Their findings sit in a baseline
+     * or a test PHPStan may not analyse, and are reported there anyway: they
+     * are exactly what the base revision is for.
+     *
+     * @return list<Report>
+     */
+    private function diff(Sloppy $sloppy, RuleFilter $filter, ?Severity $threshold, string $base, AnalysedPaths $paths): array
+    {
+        $configuration = $sloppy->configuration;
+        $report = $sloppy->diff($base);
+        $evidence = EvidenceCollector::fromConfiguration($configuration)->ids();
+        $reports = [];
+
+        foreach ($report->new as $finding) {
+            $absolute = $configuration->basePath.'/'.$finding->location->relativePath;
+            $analysed = $paths->find($absolute);
+
+            if ($this->reportable($finding, $filter, $threshold) && ($analysed !== null || in_array($finding->ruleId, $evidence, true))) {
+                $reports[] = FindingReport::from($finding, $analysed ?? $absolute, $this->options->explain);
+            }
+        }
+
+        $changed = array_map(static fn (ChangedFile $file): string => $file->relativePath, $report->changedFiles);
+
+        return [
+            ...$reports,
+            ...RunReport::ruleFailures($report->errors, $changed, $configuration->basePath, $paths),
+            ...RunReport::scoreBelow($this->options->minScore, $report->currentScore),
+        ];
+    }
+
+    private function reportable(Finding $finding, RuleFilter $filter, ?Severity $threshold): bool
+    {
+        return $threshold instanceof Severity
+            && $finding->severity->isAtLeast($threshold)
+            && $filter->accepts($finding->ruleId);
+    }
+
+    /**
+     * The file map with the editor's unsaved copy standing in for the file
+     * on disk, the same substitution PHPStan's `--tmp-file` makes.
+     *
+     * @param  array<string, string>  $map
+     * @return array<string, string>
+     */
+    private function withEditorBuffer(array $map): array
+    {
+        if ($this->options->editorFile === null || $this->options->editorInsteadOf === null) {
+            return $map;
+        }
+
+        $insteadOf = AnalysedPaths::comparable($this->options->editorInsteadOf);
+
+        foreach ($map as $relative => $absolute) {
+            if (AnalysedPaths::comparable($absolute) === $insteadOf) {
+                $map[$relative] = $this->options->editorFile;
+            }
+        }
+
+        return $map;
+    }
+
     private function threshold(?Severity $configured): ?Severity
     {
-        if ($this->failOn === null) {
+        if ($this->options->failOn === null) {
             return $configured;
         }
 
-        return $this->failOn === self::NEVER ? null : Severity::parse($this->failOn);
+        return $this->options->failOn === Options::NEVER ? null : Severity::parse($this->options->failOn);
     }
 
-    /**
-     * `sloppy.SL107`. A custom rule's ID is whatever its author chose, and
-     * PHPStan accepts only letters, digits and inner dots.
-     */
-    public static function identifier(string $ruleId): string
+    private static function percentage(string $parameter, int $value): int
     {
-        $sanitised = trim((string) preg_replace('/[^A-Za-z0-9.]+/', '', $ruleId), '.');
+        if ($value < 0 || $value > 100) {
+            throw new InvalidArgumentException(sprintf('The sloppy.%s parameter must be between 0 and 100; it is %d.', $parameter, $value));
+        }
 
-        return 'sloppy.'.($sanitised === '' ? 'custom' : $sanitised);
-    }
-
-    /**
-     * The path PHPStan knows a file by, so its ignore comments and baseline
-     * match; Sloppy's own spelling when PHPStan did not analyse the file.
-     *
-     * @param  array<string, string>  $paths
-     */
-    private static function pathFor(string $basePath, string $relative, array $paths): string
-    {
-        $absolute = $basePath.'/'.$relative;
-
-        return $paths[self::comparable($absolute)] ?? $absolute;
-    }
-
-    private static function resolve(string $path, string $base): string
-    {
-        $isAbsolute = str_starts_with($path, '/')
-            || str_starts_with($path, '\\')
-            || preg_match('/^[A-Za-z]:[\\\\\/]/', $path) === 1;
-
-        return $isAbsolute ? $path : rtrim($base, '/\\').'/'.$path;
-    }
-
-    private static function comparable(string $path): string
-    {
-        $real = realpath($path);
-        $resolved = str_replace('\\', '/', $real === false ? $path : $real);
-
-        return PHP_OS_FAMILY === 'Windows' ? mb_strtolower($resolved) : $resolved;
+        return $value;
     }
 }

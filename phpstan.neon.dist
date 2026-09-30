@@ -1,3 +1,8 @@
+includes:
+  # The extension checks its own source: sloppy.php covers src/ and fails on
+  # anything at all.
+  - extension.neon
+
 parameters:
   level: max
   paths:
