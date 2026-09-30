@@ -1,0 +1,62 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    runs-on: ${{ matrix.os }}
+
+    timeout-minutes: 15
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # `lowest` on the two ends of the PHP range catches a constraint in
+        # composer.json wider than the code supports. Windows runs because path
+        # spelling is where PHPStan and Sloppy most easily disagree.
+        include:
+          - { os: ubuntu-latest, php: '8.3', dependencies: lowest }
+          - { os: ubuntu-latest, php: '8.3', dependencies: highest }
+          - { os: ubuntu-latest, php: '8.4', dependencies: highest }
+          - { os: ubuntu-latest, php: '8.5', dependencies: highest }
+          - { os: ubuntu-latest, php: '8.5', dependencies: lowest }
+          - { os: windows-latest, php: '8.4', dependencies: highest }
+
+    name: PHP ${{ matrix.php }} (${{ matrix.dependencies }}, ${{ matrix.os }})
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mbstring
+          coverage: none
+
+      - name: Install dependencies
+        uses: ramsey/composer-install@v3
+        with:
+          dependency-versions: ${{ matrix.dependencies }}
+
+      # Formatting and analysis judge this package's code, not whether it runs
+      # on old dependencies, and the oldest Pint cannot run at all. The tests
+      # below are what the lowest legs are for.
+      - name: Check formatting
+        if: matrix.dependencies == 'highest'
+        run: vendor/bin/pint --test
+
+      - name: Analyse
+        if: matrix.dependencies == 'highest'
+        run: vendor/bin/phpstan analyse --no-progress --memory-limit=512M
+
+      - name: Test
+        run: vendor/bin/phpunit
