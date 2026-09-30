@@ -1,0 +1,82 @@
+{
+    "name": "heyosseus/phpstan-sloppy",
+    "type": "phpstan-extension",
+    "description": "Sloppy's rules inside your PHPStan run: swallowed exceptions, god methods, N+1 queries, placeholder bodies and the rest of the debt AI coding agents leave in PHP, reported as PHPStan errors.",
+    "keywords": [
+        "phpstan",
+        "phpstan-extension",
+        "phpstan-rules",
+        "static-analysis",
+        "code-quality",
+        "technical-debt",
+        "ai",
+        "ai-agents",
+        "laravel",
+        "sloppy"
+    ],
+    "license": "MIT",
+    "homepage": "https://github.com/heyosseus/phpstan-sloppy",
+    "support": {
+        "issues": "https://github.com/heyosseus/phpstan-sloppy/issues",
+        "source": "https://github.com/heyosseus/phpstan-sloppy",
+        "docs": "https://github.com/heyosseus/sloppy#readme"
+    },
+    "authors": [
+        {
+            "name": "heyosseus",
+            "email": "ratiruxadzee@gmail.com"
+        }
+    ],
+    "require": {
+        "php": "^8.3",
+        "heyosseus/sloppy": "^1.3",
+        "phpstan/phpstan": "^2.1"
+    },
+    "require-dev": {
+        "laravel/pint": "^1.18",
+        "phpstan/extension-installer": "^1.4",
+        "phpstan/phpstan-phpunit": "^2.0",
+        "phpstan/phpstan-strict-rules": "^2.0",
+        "phpunit/phpunit": "^11.5 || ^12.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Heyosseus\\PhpstanSloppy\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Heyosseus\\PhpstanSloppy\\Tests\\": "tests/"
+        },
+        "exclude-from-classmap": [
+            "tests/Fixtures/"
+        ]
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true,
+    "config": {
+        "sort-packages": true,
+        "preferred-install": "dist",
+        "allow-plugins": {
+            "phpstan/extension-installer": true
+        }
+    },
+    "extra": {
+        "phpstan": {
+            "includes": [
+                "extension.neon"
+            ]
+        }
+    },
+    "scripts": {
+        "lint": "pint",
+        "test:lint": "pint --test",
+        "test:types": "phpstan analyse --ansi --memory-limit=512M",
+        "test:unit": "phpunit --colors=always",
+        "test": [
+            "@test:lint",
+            "@test:types",
+            "@test:unit"
+        ]
+    }
+}
